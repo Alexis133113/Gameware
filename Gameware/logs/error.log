@@ -1,0 +1,12 @@
+[04-Jan-2026 23:15:46 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown database 'your_database_name' in C:\xampp\htdocs\Gameware\db.php:22
+Stack trace:
+#0 C:\xampp\htdocs\Gameware\db.php(22): mysqli_connect('localhost', 'root', Object(SensitiveParameterValue), 'your_database_n...')
+#1 C:\xampp\htdocs\Gameware\admin\vieworders.php(3): include('C:\\xampp\\htdocs...')
+#2 {main}
+  thrown in C:\xampp\htdocs\Gameware\db.php on line 22
+[04-Jan-2026 23:15:55 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown database 'your_database_name' in C:\xampp\htdocs\Gameware\db.php:22
+Stack trace:
+#0 C:\xampp\htdocs\Gameware\db.php(22): mysqli_connect('localhost', 'root', Object(SensitiveParameterValue), 'your_database_n...')
+#1 C:\xampp\htdocs\Gameware\index.php(3): include('C:\\xampp\\htdocs...')
+#2 {main}
+  thrown in C:\xampp\htdocs\Gameware\db.php on line 22
