@@ -1,0 +1,18 @@
+[04-Jan-2026 23:15:46 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown database 'your_database_name' in C:\xampp\htdocs\Gameware\db.php:22
+Stack trace:
+#0 C:\xampp\htdocs\Gameware\db.php(22): mysqli_connect('localhost', 'root', Object(SensitiveParameterValue), 'your_database_n...')
+#1 C:\xampp\htdocs\Gameware\admin\vieworders.php(3): include('C:\\xampp\\htdocs...')
+#2 {main}
+  thrown in C:\xampp\htdocs\Gameware\db.php on line 22
+[04-Jan-2026 23:15:55 Europe/Berlin] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown database 'your_database_name' in C:\xampp\htdocs\Gameware\db.php:22
+Stack trace:
+#0 C:\xampp\htdocs\Gameware\db.php(22): mysqli_connect('localhost', 'root', Object(SensitiveParameterValue), 'your_database_n...')
+#1 C:\xampp\htdocs\Gameware\index.php(3): include('C:\\xampp\\htdocs...')
+#2 {main}
+  thrown in C:\xampp\htdocs\Gameware\db.php on line 22
+2026-01-14 09:31:56 - Verification email failed for: alexisdefeo01331@gmail.com
+2026-01-14 09:39:41 - Verification email failed for: alexisdefeo01331@gmail.com
+2026-01-14 09:51:29 - Verification email failed for: alexisdefeo01331@gmail.com - Error: PHPMailer Error: SMTP Error: Could not connect to SMTP host. Connection failed. stream_socket_enable_crypto(): SSL operation failed with code 1. OpenSSL Error messages:
+error:0A000086:SSL routines::certificate verify failed SMTP server error: QUIT command failed
+2026-01-14 09:52:16 - Verification email failed for: alexisdefeo01331@gmail.com - Error: PHPMailer Error: SMTP Error: Could not connect to SMTP host. Connection failed. stream_socket_enable_crypto(): SSL operation failed with code 1. OpenSSL Error messages:
+error:0A000086:SSL routines::certificate verify failed SMTP server error: QUIT command failed
