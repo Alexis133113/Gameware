@@ -5,9 +5,40 @@ include "db.php";
 $error = "";
 $success = "";
 
+// Include PHPMailer
+require 'PHPMailer/src/Exception.php';
+require 'PHPMailer/src/PHPMailer.php';
+require 'PHPMailer/src/SMTP.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
 // Create logs directory if it doesn't exist
 if (!is_dir(__DIR__ . '/logs')) {
     mkdir(__DIR__ . '/logs', 0755, true);
+}
+
+// Handle email verification
+if(isset($_GET['verify'])){
+    $verification_code = cleanInput($_GET['verify']);
+    
+    // Check if verification code exists
+    $sql = "SELECT * FROM users WHERE verification_code = ? AND is_verified = 0";
+    $result = safeQuery($conn, $sql, [$verification_code]);
+    
+    if($result && mysqli_num_rows($result) > 0){
+        $user = mysqli_fetch_assoc($result);
+        
+        // Update user to verified
+        $update_sql = "UPDATE users SET is_verified = 1, verification_code = NULL WHERE id = ?";
+        safeQuery($conn, $update_sql, [$user['id']]);
+        
+        $_SESSION['success'] = "Email verified successfully! You can now login.";
+        header("Location: login.php");
+        exit();
+    } else {
+        $error = "Invalid or expired verification link.";
+    }
 }
 
 if(isset($_POST['submit'])){
@@ -18,6 +49,7 @@ if(isset($_POST['submit'])){
     $phone = cleanInput($_POST['phone']);
     $address = cleanInput($_POST['address']);
     $role = "user";
+    $verification_code = bin2hex(random_bytes(32)); // Generate verification code
     
     // Basic validation
     if (empty($name) || empty($email) || empty($password) || empty($phone) || empty($address)) {
@@ -42,25 +74,37 @@ if(isset($_POST['submit'])){
             // Hash the password
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             
-            // Insert user
-            $sql = "INSERT INTO users (name, email, password, phone, address, role) 
-                    VALUES (?, ?, ?, ?, ?, ?)";
+            // Insert user with verification code
+            $sql = "INSERT INTO users (name, email, password, phone, address, role, verification_code, is_verified) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0)";
             
             $stmt = mysqli_prepare($conn, $sql);
-            mysqli_stmt_bind_param($stmt, "ssssss", $name, $email, $hashed_password, $phone, $address, $role);
+            mysqli_stmt_bind_param($stmt, "sssssss", $name, $email, $hashed_password, $phone, $address, $role, $verification_code);
             
             if(mysqli_stmt_execute($stmt)) {
                 $user_id = mysqli_insert_id($conn);
-                $success = "Registration Successful! Redirecting to login...";
                 
-                // Log the registration
-                $log_message = "New user registered: $email (ID: $user_id)";
-                error_log(date('Y-m-d H:i:s') . " - " . $log_message . PHP_EOL, 3, __DIR__ . '/logs/actions.log');
-                
-                $_SESSION['success'] = "Registration successful! Please login.";
-                
-                header("refresh:2; url=login.php");
-                exit();
+                // Send verification email
+                $email_result = sendVerificationEmail($email, $name, $verification_code);
+                if($email_result === true){
+                    $success = "Registration Successful! Please check your email to verify your account.";
+                    
+                    // Log the registration
+                    $log_message = "New user registered: $email (ID: $user_id) - Verification email sent";
+                    error_log(date('Y-m-d H:i:s') . " - " . $log_message . PHP_EOL, 3, __DIR__ . '/logs/actions.log');
+                    
+                    // Redirect to verification pending page
+                    header("refresh:3; url=verification_pending.php?email=" . urlencode($email));
+                    exit();
+                } else {
+                    // If email fails, still save user but show error
+                    $error = "Registration complete, but verification email failed to send. Please contact support.";
+                    $error .= "<br><small>Error: " . htmlspecialchars($email_result) . "</small>";
+                    
+                    // Log the email error
+                    $log_message = "Verification email failed for: $email - Error: " . $email_result;
+                    error_log(date('Y-m-d H:i:s') . " - " . $log_message . PHP_EOL, 3, __DIR__ . '/logs/error.log');
+                }
             } else {
                 $error = "Registration failed. Please try again.";
                 
@@ -69,6 +113,115 @@ if(isset($_POST['submit'])){
                 error_log(date('Y-m-d H:i:s') . " - " . $error_message . PHP_EOL, 3, __DIR__ . '/logs/error.log');
             }
         }
+    }
+}
+
+/**
+ * Send verification email using PHPMailer - F
+ */
+function sendVerificationEmail($to_email, $to_name, $verification_code){
+    $mail = new PHPMailer(true);
+    
+    try {
+        // Enable debugging
+        $mail->SMTPDebug = 3; // Shows detailed connection information
+        $mail->Debugoutput = function($str, $level) {
+            error_log("PHPMailer debug level $level: $str");
+        };
+        
+        // Server settings
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'alexisdefeo01331@gmail.com';
+        $mail->Password   = 'jbdsdkzmdsczwqbg'; // Your app password
+        
+        // FIX: Disable SSL certificate verification to fix the SSL error
+        $mail->SMTPOptions = array(
+            'ssl' => array(
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true
+            )
+        );
+        
+        // Try STARTTLS first
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        
+        // Increase timeout
+        $mail->Timeout = 30;
+        
+        // Alternative: Try SSL on port 465 if STARTTLS fails
+        // $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        // $mail->Port       = 465;
+        
+        // Recipients
+        $mail->setFrom('alexisdefeo01331@gmail.com', 'Gameware');
+        $mail->addAddress($to_email, $to_name);
+        
+        // Content
+        $mail->isHTML(true);
+        $mail->Subject = 'Verify Your Gameware Account';
+        
+        $verification_link = "http://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/register.php?verify=" . $verification_code;
+        
+        $mail->Body = "
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(45deg, #00ff88, #00cc6a); padding: 20px; text-align: center; }
+                .content { background: #f4f4f4; padding: 30px; }
+                .button { background: linear-gradient(45deg, #00ff88, #00cc6a); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; }
+                .footer { background: #333; color: white; padding: 15px; text-align: center; margin-top: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <div class='header'>
+                    <h1 style='color: white; margin: 0;'>🎮 Gameware</h1>
+                </div>
+                <div class='content'>
+                    <h2>Welcome to Gameware, $to_name!</h2>
+                    <p>Thank you for registering with Gameware. To complete your registration and start gaming, please verify your email address by clicking the button below:</p>
+                    
+                    <p style='text-align: center; margin: 30px 0;'>
+                        <a href='$verification_link' class='button' style='color: white; text-decoration: none; font-weight: bold;'>
+                            VERIFY MY EMAIL
+                        </a>
+                    </p>
+                    
+                    <p>Or copy and paste this link in your browser:</p>
+                    <p style='background: #eee; padding: 10px; border-radius: 5px; word-break: break-all;'>
+                        $verification_link
+                    </p>
+                    
+                    <p>This verification link will expire in 24 hours.</p>
+                    <p>If you didn't create an account with Gameware, please ignore this email.</p>
+                    
+                    <p>Happy Gaming,<br>The Gameware Team</p>
+                </div>
+                <div class='footer'>
+                    <p>&copy; " . date('Y') . " Gameware. All rights reserved.</p>
+                    <p>This is an automated message, please do not reply to this email.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        ";
+        
+        $mail->AltBody = "Welcome to Gameware, $to_name!\n\nPlease verify your email by visiting this link: $verification_link\n\nThis link expires in 24 hours.\n\nIf you didn't create an account, please ignore this email.\n\nGameware Team";
+        
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        // Return the actual error message for debugging
+        $error_msg = "PHPMailer Error: " . $mail->ErrorInfo;
+        error_log($error_msg); // Also log it
+        return $error_msg;
     }
 }
 ?>
@@ -80,7 +233,6 @@ if(isset($_POST['submit'])){
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register - Gameware</title>
     <style>
-        /* Copy all the CSS from your login.php */
         * {
             margin: 0;
             padding: 0;
@@ -220,6 +372,10 @@ if(isset($_POST['submit'])){
             background: rgba(255, 255, 255, 0.08);
         }
 
+        .form-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
         .password-container {
             position: relative;
         }
@@ -300,6 +456,17 @@ if(isset($_POST['submit'])){
             animation: slideIn 0.3s ease;
         }
 
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .footer {
             background: rgba(0, 0, 0, 0.9);
             padding: 30px 40px;
@@ -308,7 +475,37 @@ if(isset($_POST['submit'])){
             margin-top: 60px;
         }
 
+        .verification-info {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        .verification-info h3 {
+            color: #00ff88;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .verification-info p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .verification-info small {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+        }
+
         @media (max-width: 768px) {
+            .navbar {
+                padding: 15px 20px;
+            }
+            
             .auth-container {
                 padding: 20px;
                 margin: 100px auto 40px;
@@ -320,6 +517,10 @@ if(isset($_POST['submit'])){
             
             .hero h1 {
                 font-size: 28px;
+            }
+            
+            .section-title {
+                font-size: 24px;
             }
         }
     </style>
@@ -342,11 +543,15 @@ if(isset($_POST['submit'])){
             <h2 class="section-title">Create Your Account</h2>
             
             <?php if (!empty($error)): ?>
-                <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
+                <div class="error-message"><?php echo $error; ?></div>
             <?php endif; ?>
             
             <?php if (!empty($success)): ?>
                 <div class="success-message"><?php echo htmlspecialchars($success); ?></div>
+            <?php endif; ?>
+            
+            <?php if(isset($_GET['verify']) && $error): ?>
+                <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
             
             <form action="register.php" method="post" id="registerForm">
@@ -398,6 +603,12 @@ if(isset($_POST['submit'])){
                     <textarea name="address" id="address" class="form-input" 
                               placeholder="Enter your complete address" required 
                               style="min-height: 100px; resize: vertical;"><?php echo isset($_POST['address']) ? htmlspecialchars($_POST['address']) : ''; ?></textarea>
+                </div>
+                
+                <div class="verification-info">
+                    <h3>📧 Email Verification Required</h3>
+                    <p>After registration, you'll receive a verification email to activate your account.</p>
+                    <p><small>Check your spam folder if you don't see the email within 5 minutes.</small></p>
                 </div>
                 
                 <button type="submit" name="submit" class="auth-button">
